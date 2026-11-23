@@ -16,6 +16,11 @@
 //     ~26 bps, so each completed cycle nets ~+1.24%.
 //   - Rebuy dip: 0.5% below the last sale price, so a choppy tape
 //     keeps cycling even while it never revisits $60,000.
+//   - Chase: if the tape runs 0.5% ABOVE the last sale instead of
+//     dipping, buy back in — sitting in cash while an uptrend runs
+//     away is the bigger loss. (Never fired on the dev window, where
+//     every sale was followed by a dip; it only matters in a
+//     trend that keeps going after we sell.)
 //   - No stop-loss, no leverage, no shorts (long only, per the rules).
 
 import { runBars, type BuyInput, type SellInput } from './vendor/makefun-bars.ts';
@@ -26,6 +31,8 @@ const TAKE_PROFIT_NUM = 1015n; // sell at +1.5% over the fill price
 const TAKE_PROFIT_DEN = 1000n;
 const DIP_NUM = 995n; // rebuy 0.5% below the last sale price
 const DIP_DEN = 1000n;
+const CHASE_NUM = 1005n; // rebuy 0.5% above the last sale (trend runs on)
+const CHASE_DEN = 1000n;
 const FALLBACK_BAR = 1260; // buy-and-hold if the level never came
 const MAX_SLIPPAGE_BPS = 100;
 
@@ -70,11 +77,13 @@ await runBars({
     }
 
     // Flat: buy all-in at the absolute level, on a dip below the last
-    // sale, or at the fallback bar (buy-and-hold to the end).
+    // sale, on a chase when the trend runs past the last sale, or at
+    // the fallback bar (buy-and-hold to the end).
     const atLevel = close <= triggerRaw;
     const onDip = lastSellPrice !== null && close <= (lastSellPrice * DIP_NUM) / DIP_DEN;
+    const onChase = lastSellPrice !== null && close >= (lastSellPrice * CHASE_NUM) / CHASE_DEN;
     const fallback = state.seq >= FALLBACK_BAR;
-    if (!atLevel && !onDip && !fallback) return [];
+    if (!atLevel && !onDip && !onChase && !fallback) return [];
 
     const spend = state.cash < state.weightRoom(SYMBOL) ? state.cash : state.weightRoom(SYMBOL);
     if (spend < BigInt(state.hello.fees.min_notional_quote_units)) return [];
